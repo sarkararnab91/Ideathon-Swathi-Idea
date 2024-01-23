@@ -1,6 +1,8 @@
 import PyPDF2
 import json
 import traceback
+from langchain.storage import InMemoryStore
+from langchain.retrievers import ParentDocumentRetriever
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
@@ -45,12 +47,37 @@ def parse_pdf(file):
     
     ### Indexing: Split 
     text_splitter = RecursiveCharacterTextSplitter(
-                 chunk_size=1000, chunk_overlap=200, add_start_index=True )
+                 chunk_size=400, chunk_overlap=100, add_start_index=True )
     all_splits = text_splitter.split_documents(docs)
+    #print("*** The metadata is : " , all_splits[1].metadata)
     #vector space
     vectorstore = Chroma.from_documents(documents=all_splits, embedding=OpenAIEmbeddings())
     
     return vectorstore
+def parse_long_pdf(file):
+     # File uploader
+    loader = PyPDFLoader(file)
+    docs = loader.load_and_split()    
+    
+    #This text splitter is used to create the parent documents
+    parent_splitter = RecursiveCharacterTextSplitter(chunk_size=2000)
+    # This text splitter is used to create the child documents
+    # It should create documents smaller than the parent
+    child_splitter = RecursiveCharacterTextSplitter(chunk_size=400)
+    # The vectorstore to use to index the child chunks
+    vectorstore = Chroma(
+        collection_name="split_parents", embedding_function=OpenAIEmbeddings()
+    )
+    # The storage layer for the parent documents
+    store = InMemoryStore()
+    
+    retriever = ParentDocumentRetriever(
+    vectorstore=vectorstore,
+    docstore=store,
+    child_splitter=child_splitter,
+    parent_splitter=parent_splitter,)
+    retriever.add_documents(docs)
+    return retriever
 
 def get_table_data(quiz_str):
     try:
